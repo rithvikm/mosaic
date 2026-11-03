@@ -29,7 +29,7 @@ else
   if [ "$#" -ge 1 ] && [[ $1 =~ $re_sport ]] && ! [[ "$1" == *.* ]]; then
     SPORT="$1"; shift
     LISTING=$(python3 - "$BUFF" "$CRIC" "$SPORT" "$@" <<'PY'
-import re, sys, html as h, urllib.request
+import json, re, sys, html as h, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 domain, cric = sys.argv[1], sys.argv[2]
 args = [a.lower() for a in sys.argv[3:]]
@@ -156,27 +156,245 @@ for url in order:
     if (sports or aliases) and not (s in sports or al & set(aliases)):
         continue
     if all(w in label.lower() for w in kw):
-        rows.append((s, label, url))
+        rows.append((s, label, url, al))
 
 if not rows:
     live = avail_sports + [a for a in avail_aliases if a not in avail_sports]
     shown = " ".join(a for a in args if a != "all") or "all"
     sys.exit("no games found today matching '%s' (live today: %s — check sport/team names; if the site rotated domains, set BUFF_DOMAIN)"
              % (shown, ", ".join(live) or "none"))
-mixed = len({s for s, _, _ in rows}) > 1
-for i, (s, label, url) in enumerate(rows, 1):
-    if mixed:
-        label = "[%s] %s" % (s, label)
-    print("%d\t%s\t%s" % (i, label, url))
+
+# --- live score / clock via ESPN (unofficial public JSON) + Cricinfo for cricket ---
+ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports"
+SOCCER_COMMON = [
+    "soccer/eng.1", "soccer/esp.1", "soccer/ger.1", "soccer/ita.1", "soccer/fra.1",
+    "soccer/usa.1", "soccer/uefa.champions", "soccer/uefa.europa", "soccer/mex.1",
+    "soccer/ned.1", "soccer/por.1", "soccer/eng.2", "soccer/usa.w.1", "soccer/sau.1",
+]
+ESPN_MAP = {
+    "nhl": ["hockey/nhl"], "nfl": ["football/nfl"], "nba": ["basketball/nba"],
+    "mlb": ["baseball/mlb"], "wnba": ["basketball/wnba"], "cfl": ["football/cfl"],
+    "cfb": ["football/college-football"], "ncaaf": ["football/college-football"],
+    "college-football": ["football/college-football"],
+    "cbb": ["basketball/mens-college-basketball"], "ncaab": ["basketball/mens-college-basketball"],
+    "college-basketball": ["basketball/mens-college-basketball"],
+    "mens-college-basketball": ["basketball/mens-college-basketball"],
+    "womens-college-basketball": ["basketball/womens-college-basketball"],
+    "wcbb": ["basketball/womens-college-basketball"],
+    "ufc": ["mma/ufc"], "mma": ["mma/ufc"],
+    "premier-league": ["soccer/eng.1"], "epl": ["soccer/eng.1"], "eplpremier-league": ["soccer/eng.1"],
+    "laliga": ["soccer/esp.1"], "la-liga": ["soccer/esp.1"],
+    "bundesliga": ["soccer/ger.1"], "serie-a": ["soccer/ita.1"], "seriea": ["soccer/ita.1"],
+    "ligue-1": ["soccer/fra.1"], "ligue1": ["soccer/fra.1"], "mls": ["soccer/usa.1"],
+    "champions-league": ["soccer/uefa.champions"], "ucl": ["soccer/uefa.champions"],
+    "europa-league": ["soccer/uefa.europa"], "europa": ["soccer/uefa.europa"],
+    "ligamx": ["soccer/mex.1"], "liga-mx": ["soccer/mex.1"],
+    "eredivisie": ["soccer/ned.1"], "primeira": ["soccer/por.1"], "ligaportugal": ["soccer/por.1"],
+    "championship": ["soccer/eng.2"], "nwsl": ["soccer/usa.w.1"],
+    "saudi-pro-league": ["soccer/sau.1"], "spl": ["soccer/sau.1"],
+    "a-league": ["soccer/aus.1"], "soccer": SOCCER_COMMON, "football": SOCCER_COMMON,
+}
+_STRIP = ("-preseason", "-playoffs", "-postseason", "-regular", "-finals", "-live", "-streams")
+_STOP = {
+    "vs", "v", "at", "@", "and", "the", "fc", "cf", "sc", "afc", "cfc", "united",
+    "club", "city", "town", "real", "sporting", "de", "la", "el", "al",
+}
+
+def base_sport(s):
+    b = s
+    for suf in _STRIP:
+        if b.endswith(suf):
+            b = b[: -len(suf)]
+    return b
+
+def espn_paths(sport, aliases):
+    keys, seen, out = [], set(), []
+    for k in [sport, base_sport(sport)] + sorted(aliases):
+        if k and k not in seen:
+            seen.add(k); keys.append(k)
+    for k in keys:
+        for p in ESPN_MAP.get(k, []):
+            if p not in seen:
+                seen.add(p); out.append(p)
+    return out
+
+def fetch_json(url):
+    try:
+        return json.loads(fetch(url))
+    except Exception:
+        return None
+
+def team_names(comp):
+    t = comp.get("team") or comp.get("athlete") or {}
+    names = [
+        t.get("displayName"), t.get("shortDisplayName"), t.get("name"),
+        t.get("abbreviation"), t.get("location"), t.get("nickname"),
+    ]
+    if t.get("firstName") and t.get("lastName"):
+        names.append("%s %s" % (t["firstName"], t["lastName"]))
+    return [n for n in names if n]
+
+def tokens(s):
+    s = re.sub(r"[^a-z0-9\s]", " ", (s or "").lower())
+    return {w for w in s.split() if len(w) > 1 and w not in _STOP}
+
+def side_hits(label_toks, names):
+    best = 0
+    for n in names:
+        nt = tokens(n)
+        if not nt:
+            continue
+        inter = label_toks & nt
+        if inter:
+            best = max(best, len(inter))
+    return best
+
+def parse_espn_events(data):
+    out = []
+    for ev in (data or {}).get("events") or []:
+        comps = (ev.get("competitions") or [None])[0]
+        if not comps:
+            continue
+        competitors = comps.get("competitors") or []
+        sides = []
+        for c in competitors:
+            sides.append((c.get("homeAway") or "", team_names(c), c.get("score") or ""))
+        st = (comps.get("status") or {})
+        typ = st.get("type") or {}
+        detail = typ.get("shortDetail") or typ.get("detail") or ""
+        state = typ.get("state") or ""
+        out.append({"sides": sides, "detail": detail, "state": state, "name": ev.get("name") or ""})
+    return out
+
+def parse_cricinfo(data):
+    out = []
+    matches = ((data or {}).get("content") or {}).get("matches") or []
+    # some payloads nest under content.recentMatches / matches groups
+    if not matches:
+        for block in ((data or {}).get("content") or {}).get("matchGroups") or []:
+            matches.extend(block.get("matches") or [])
+    for m in matches:
+        teams = m.get("teams") or []
+        sides = []
+        for t in teams:
+            info = t.get("team") or {}
+            names = [info.get("longName"), info.get("name"), info.get("abbreviation")]
+            score = t.get("score") or t.get("scoreInfo") or ""
+            if isinstance(score, dict):
+                score = score.get("display") or score.get("score") or ""
+            is_home = "home" if t.get("isHome") else "away"
+            sides.append((is_home, [n for n in names if n], str(score)))
+        detail = m.get("statusText") or m.get("statusEng") or m.get("format") or ""
+        state = "in" if (m.get("stage") or "").upper() in ("LIVE", "RUNNING") or (m.get("status") or "").upper() == "LIVE" else (
+            "post" if (m.get("stage") or "").upper() in ("FINISHED", "RESULT") else "pre")
+        title = m.get("title") or m.get("slug") or ""
+        out.append({"sides": sides, "detail": detail, "state": state, "name": title})
+    return out
+
+def score_bits(label, ev):
+    """Return (score, status) for table columns; empty strings when unknown."""
+    def first_pos(names):
+        pos = len(label) + 1
+        low = label.lower()
+        for n in names:
+            for tok in sorted(tokens(n), key=len, reverse=True):
+                p = low.find(tok)
+                if p >= 0:
+                    pos = min(pos, p)
+        return pos
+    # order scores to match which side is named first in the listing label
+    ordered = sorted(ev["sides"], key=lambda s: first_pos(s[1]))
+    scores = [s[2] for s in ordered if s[2] != ""]
+    detail = ev["detail"] or ""
+    if ev["state"] == "pre" or not scores:
+        return "", detail
+    score_bit = "-".join(scores[:2]) if len(scores) >= 2 else scores[0]
+    return score_bit, detail
+
+def best_event(label, events):
+    lt = tokens(label)
+    best, best_sc = None, 0
+    for ev in events:
+        if len(ev["sides"]) < 2:
+            # UFC etc: one competitor listed as fight card pair — fall back to name tokens
+            sc = side_hits(lt, [ev["name"]] + [n for _, names, _ in ev["sides"] for n in names])
+            if sc > best_sc:
+                best_sc, best = sc, ev
+            continue
+        hits = [side_hits(lt, names) for _, names, _ in ev["sides"]]
+        # need both sides to hit at least one token
+        if min(hits[:2]) < 1:
+            continue
+        sc = sum(hits[:2])
+        if sc > best_sc:
+            best_sc, best = sc, ev
+    # require a decent match (both sides → sc>=2, or name overlap ≥2 for odd formats)
+    if best is None or best_sc < 2:
+        return None
+    return best
+
+need_cricket = any(s == "cricket" or "cricket" in al for s, _, _, al in rows)
+# path -> events; also index which paths belong to each listing row
+row_paths = []
+paths, path_seen = [], set()
+for s, _, _, al in rows:
+    rp = espn_paths(s, al)
+    row_paths.append(rp)
+    for p in rp:
+        if p not in path_seen:
+            path_seen.add(p); paths.append(p)
+
+board = {}  # espn path -> [events]
+
+def load_board(path):
+    return path, parse_espn_events(fetch_json("%s/%s/scoreboard" % (ESPN_BASE, path)))
+
+with ThreadPoolExecutor(max_workers=12) as ex:
+    futs = [ex.submit(load_board, p) for p in paths]
+    cric_fut = None
+    if need_cricket:
+        cric_fut = ex.submit(lambda: parse_cricinfo(fetch_json(
+            "https://hs-consumer-api.espncricinfo.com/v1/pages/matches/current?lang=en&latest=true")))
+    for fut in futs:
+        try:
+            p, evs = fut.result()
+            board[p] = evs or []
+        except Exception:
+            pass
+    cric_events = []
+    if cric_fut is not None:
+        try:
+            cric_events = cric_fut.result() or []
+        except Exception:
+            pass
+
+mixed = len({s for s, _, _, _ in rows}) > 1
+for i, ((s, label, url, al), rp) in enumerate(zip(rows, row_paths), 1):
+    pool = []
+    for p in rp:
+        pool.extend(board.get(p, []))
+    if s == "cricket" or "cricket" in al:
+        pool.extend(cric_events)
+    # unknown sport / no mapped board: try all fetched events as a last resort
+    if not pool and board:
+        for evs in board.values():
+            pool.extend(evs)
+    ev = best_event(label, pool) if pool else None
+    score, status = ("", "")
+    if ev:
+        score, status = score_bits(label, ev)
+    matchup = "[%s] %s" % (s, label) if mixed else label
+    # TSV: idx, matchup, score, status, url  (score/status may be empty)
+    print("%d\t%s\t%s\t%s\t%s" % (i, matchup, score, status, url))
 # keyword searches auto-launch their matches; sport filters always menu
 print("MODE\t%s" % ("auto" if kw else "menu"))
 PY
 ) || { [ -z "$LISTING" ] || echo "quadbox: $LISTING" >&2; exit 1; }
 
-    LABELS=(); PICK_URLS=(); MODE=menu
-    while IFS=$'\t' read -r _idx label url; do
-      case "$_idx" in MODE) MODE="$label"; continue;; esac
-      LABELS+=("$label"); PICK_URLS+=("$url")
+    LABELS=(); SCORES=(); STATUSES=(); PICK_URLS=(); MODE=menu
+    while IFS=$'\t' read -r _idx matchup score status url; do
+      case "$_idx" in MODE) MODE="$matchup"; continue;; esac
+      LABELS+=("$matchup"); SCORES+=("$score"); STATUSES+=("$status"); PICK_URLS+=("$url")
     done <<< "$LISTING"
 
     # team keywords auto-launch their matches; sport filters always show the
@@ -186,8 +404,25 @@ PY
       PICKED=("${PICK_URLS[@]}")            # keyword mode: auto-pick matches
       PICKED_LABELS=("${LABELS[@]}")
     else
-      for _i in "${!LABELS[@]}"; do          # numbered menu
-        printf '%s\t%s\n' "$((_i + 1))" "${LABELS[$_i]}" >&2
+      # aligned table: # | MATCHUP | SCORE | TIME
+      _mw=7
+      for _l in "${LABELS[@]}"; do
+        [ "${#_l}" -gt "$_mw" ] && _mw=${#_l}
+      done
+      [ "$_mw" -gt 56 ] && _mw=56
+      _sw=5
+      for _s in "${SCORES[@]}"; do
+        [ "${#_s}" -gt "$_sw" ] && _sw=${#_s}
+      done
+      [ "$_sw" -lt 5 ] && _sw=5
+      _rule_m=$(printf '%*s' "$_mw" '' | tr ' ' '-')
+      _rule_s=$(printf '%*s' "$_sw" '' | tr ' ' '-')
+      printf '%-3s  %-*s  %-*s  %s\n' '#' "$_mw" 'MATCHUP' "$_sw" 'SCORE' 'TIME' >&2
+      printf '%-3s  %-*s  %-*s  %s\n' '---' "$_mw" "$_rule_m" "$_sw" "$_rule_s" '----------------' >&2
+      for _i in "${!LABELS[@]}"; do
+        _m="${LABELS[$_i]}"
+        [ "${#_m}" -gt "$_mw" ] && _m="${_m:0:$((_mw - 3))}..."
+        printf '%-3s  %-*s  %-*s  %s\n' "$((_i + 1))" "$_mw" "$_m" "$_sw" "${SCORES[$_i]}" "${STATUSES[$_i]}" >&2
       done
       printf 'pick up to 4 numbers (space separated): ' >&2
       IFS=' ' read -r picks
