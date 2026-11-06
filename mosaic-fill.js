@@ -1,8 +1,8 @@
-// quadfill — injected into a game tab; pins the video player to fill the window.
+// Mosaic Fill — injected into a game tab; pins the video player to fill the window.
 // Full-bleed video, no page chrome. Retries until a playable video exists.
 (function () {
-  if (window.__quadfill) return 'already';
-  window.__quadfill = true;
+  if (window.__mosaicFill) return 'already';
+  window.__mosaicFill = true;
 
   function biggestVideo() {
     let best = null, bestArea = 0;
@@ -26,13 +26,13 @@
   }
 
   function pin() {
-    // only in quad-sized windows; never hijack a normal full-width browser window
+    // only in tile-sized windows; never hijack a normal full-width browser window
     if (window.outerWidth > screen.width * 0.6) return 'skip:window-too-wide';
     const v = biggestVideo();
     if (!v || v.getBoundingClientRect().width < 50) return 'skip:no-video';
     const el = playerRoot(v);
-    if (el.dataset.quadfill === '1' && document.contains(el)) return 'pinned';
-    el.dataset.quadfill = '1';
+    if (el.dataset.mosaicFill === '1' && document.contains(el)) return 'pinned';
+    el.dataset.mosaicFill = '1';
     const CSS_FIXED = 'position:fixed!important;left:0!important;top:0!important;' +
       'width:100vw!important;height:100vh!important;max-width:100vw!important;' +
       'max-height:100vh!important;margin:0!important;padding:0!important;' +

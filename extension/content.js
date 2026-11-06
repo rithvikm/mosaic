@@ -1,5 +1,5 @@
-// quadfill content script — pins the page's video to fill the window.
-// Runs on every site but only activates in quad-sized windows (< 60% of
+// Mosaic Fill content script — pins the page's video to fill the window.
+// Runs on every site but only activates in tile-sized windows (< 60% of
 // screen width), so normal browsing is never touched.
 //
 // Two cases:
@@ -8,8 +8,8 @@
 //    pin the biggest iframe in the top page; this script also runs inside the
 //    frame (all_frames) and pins the <video> there to fill the iframe
 (function () {
-  if (window.__quadfill) return;
-  window.__quadfill = true;
+  if (window.__mosaicFill) return;
+  window.__mosaicFill = true;
 
   const CSS_FIXED = 'position:fixed!important;left:0!important;top:0!important;' +
     'width:100vw!important;height:100vh!important;max-width:100vw!important;' +
@@ -40,8 +40,8 @@
   }
 
   function pinElement(el) {
-    if (el.dataset.quadfill === '1' && document.contains(el)) return;
-    el.dataset.quadfill = '1';
+    if (el.dataset.mosaicFill === '1' && document.contains(el)) return;
+    el.dataset.mosaicFill = '1';
     document.documentElement.style.setProperty('background', '#000', 'important');
     if (document.body) document.body.style.setProperty('overflow', 'hidden', 'important');
     if (el.tagName === 'VIDEO') {
@@ -54,7 +54,7 @@
   }
 
   function pin() {
-    if (window.outerWidth > screen.width * 0.6) return; // not a quad window
+    if (window.outerWidth > screen.width * 0.6) return; // not a Mosaic window
     const v = biggestByArea('video');
     if (v.el && v.el.getBoundingClientRect().width >= 50) {
       pinElement(playerRoot(v.el));

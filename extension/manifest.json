@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "quadfill",
+  "name": "Mosaic Fill",
   "version": "1.1",
-  "description": "Fills quadbox-sized windows with the page's video player. Only activates in windows narrower than 60% of the screen.",
+  "description": "Fills mosaic-sized windows with the page's video player. Only activates in windows narrower than 60% of the screen.",
   "content_scripts": [
     {
       "matches": ["*://*/*"],

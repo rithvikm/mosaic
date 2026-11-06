@@ -1,199 +1,281 @@
-# quadbox
+# Mosaic
 
-Watch up to **4 sports games at once** on one screen — each video full-bleed
-in its own tile, like a personal RedZone quad box. macOS + Chrome.
+Watch up to four games or videos on one screen. Mosaic arranges Chrome windows into a grid and can expand each video player to fill its tile. Pick games from a terminal menu or bring your own links.
 
-Native fullscreen can't cover a quarter of a display (the Fullscreen API is
-all-or-nothing), and streaming sites can't be embedded in a custom app
-(`X-Frame-Options` + Widevine DRM). quadbox works around both: it tiles real
-Chrome windows into a grid and stretches each video player to fill its
-window.
+Built for **macOS and Google Chrome**.
 
-## Quickstart — league name, pick numbers, done
+## Features
 
-```sh
-git clone https://github.com/hshringeri/quadbox.git
-cd quadbox
-./quadbox nhl          # or nfl, cfb, nba, soccer, cricket, all, ...
-```
+- Watch one to four videos with layouts chosen automatically.
+- Browse games by sport, combine leagues, or search by team name.
+- See scores and game status in the picker when matching data is available.
+- Use a connected external display automatically, or choose your primary display.
+- Open YouTube links in one local grid, or other sources in separate Chrome app windows.
+- Expand supported players with the bundled Chrome extension or Apple Events script.
 
-A numbered menu of today's games appears. Type up to 4 numbers, hit Enter —
-four tiled windows, each with a full-bleed player. Click play once per
-window, mute the three you're not listening to (player volume buttons).
+## Start here: first-time setup
 
-```console
-$ ./quadbox nhl
-1   Buffalo Sabres vs Chicago Blackhawks
-2   Columbus Blue Jackets vs Utah Mammoth
-3   Edmonton Oilers vs Seattle Kraken
-4   Philadelphia Flyers vs Carolina Hurricanes
-5   Pittsburgh Penguins vs Montréal Canadiens
-6   Tampa Bay Lightning vs Washington Capitals
-7   Toronto Maple Leafs vs Ottawa Senators
-8   New York Islanders vs New Jersey Devils
-9   Minnesota Wild vs Boston Bruins
-10  Nashville Predators vs Dallas Stars
-11  Colorado Avalanche vs St. Louis Blues
-12  San Jose Sharks vs Los Angeles Kings
-13  Vancouver Canucks vs Calgary Flames
-pick up to 4 numbers (space separated): 1 3 7 9
-launching: Buffalo Sabres vs Chicago Blackhawks
-launching: Edmonton Oilers vs Seattle Kraken
-launching: Toronto Maple Leafs vs Ottawa Senators
-launching: Minnesota Wild vs Boston Bruins
-win1: -> x=0   y=38  735x472  pin=native
-win2: -> x=735 y=38  736x472  pin=native
-win3: -> x=0   y=510 735x472  pin=native
-win4: -> x=735 y=510 736x472  pin=native
-```
+You need a **Mac**, **Google Chrome**, and an internet connection. Windows and Linux are not supported. You do not need to know how to code or have a GitHub account to download Mosaic.
 
-## Picking games
+### 1. Open Terminal
 
-Games are pulled from a buffstreams-style listing — no link-hunting:
+Press **Command + Space**, type **Terminal**, and press **Return**. Terminal is the Mac app where you paste the commands below.
+
+Copy only the text inside each command box, paste it into Terminal, and press **Return**. Run the boxes in order. When a box contains several lines, you can paste them together. Wait for a command to finish before continuing. You do not need to copy the gray formatting or the words around the boxes.
+
+### 2. Check the tools Mosaic needs
+
+**Google Chrome:** if you do not have it, download it from [Google's Chrome website](https://www.google.com/chrome/), open the downloaded file, and drag Chrome into **Applications**. Open Chrome once to finish its setup.
+
+**Git** downloads Mosaic. Check whether it is installed:
 
 ```sh
-./quadbox all                # everything listed today, all sports
-./quadbox nhl                # numbered menu of today's NHL games — pick up to 4
-./quadbox nhl sabres         # auto-launch every game matching keywords
-./quadbox nfl chiefs eagles  # multiple words narrow the match
-./quadbox nfl nhl            # cross-sport: one combined menu, pick up to 4
-./quadbox soccer             # groups work too: every soccer league at once
-./quadbox cricket            # today's cricket matches (merged from cricwatch.io)
-./quadbox sabres             # no sport given: search every sport listed today
+git --version
 ```
 
-Mix sports freely — any argument matching a sport on today's page filters by
-sport, the rest are keywords matched against game labels. Cross-sport listings
-tag each row with `[sport]`. Sport filters always show the menu, so
-`./quadbox nfl nba` lists today's combined slate and waits for your picks;
-team keywords instead launch their matches directly when ≤4 of them match.
-
-Soccer and a few other sports list games only on their league pages — the
-picker merges those in automatically. Cricket comes from a second site
-(cricwatch.io's match list, `CRIC_DOMAIN` override if it rotates) since the
-main site has no cricket section. That makes keys granular (`laliga`,
-`mls`, `premier-league`) with the group name (`soccer`) matching them all;
-same for `mlb`/`nba` style shortcuts over hyphenated league keys. The merge
-fetches the league pages in parallel, so the picker takes ~3 s.
-
-Only know team names? Skip the menu — keywords match the listing and launch
-directly (great for a single game: `./quadbox nhl sabres`, or just
-`./quadbox sabres` to search every sport at once). Sport filters — one or
-several — always show the menu.
-
-Sport keys are whatever the site lists that day (`nhl`, `nfl`, `cfb`,
-`mlb-playoffs`, `nba-preseason`, `cfl`, …) — guess wrong and the error lists
-what's actually live. Pre-game you get the watch page
-(it goes live there); once live, the command resolves straight to the
-full-bleed player. If the site rotates domains:
-`BUFF_DOMAIN=https://<new-domain> ./quadbox nhl`
-
-## Paste links instead
-
-No args, and quadbox asks for links — paste up to 4, one per line, hit
-Enter. Or pass them directly:
+If you see a version number, continue. If macOS offers to install command line developer tools, accept the installation and wait for it to finish. If it does not offer, run this command and follow the installer:
 
 ```sh
-./quadbox <url1> <url2> <url3> <url4>
+xcode-select --install
 ```
 
-What you get depends on the source — quadbox picks the best engine
-automatically:
+Then run `git --version` again. This installation method is documented on [Git's macOS installation page](https://git-scm.com/install/mac).
 
-| Source | What happens | Setup |
-|---|---|---|
-| YouTube (all 4 links) | One window, built-in 2×2 embed grid, auto-playing muted | none |
-| Aggregator watch pages (buffstreams/streameast-style) | Each page's player is resolved to its direct URL, which fills its window natively | none |
-| NFL+, ESPN, Prime, Peacock, … | Tiled app-mode windows; video pinned full-bleed | one-time, below |
+**Python** runs the game picker. Check whether it is installed:
 
-## One-time setup for full-bleed on any site
-
-Only needed for services whose player sits inside a rich page (NFL+, ESPN,
-Prime, …). Pick one:
-
-**A. quadfill extension (recommended):**
-1. Chrome → `chrome://extensions`
-2. Developer mode (top right) → ON
-3. "Load unpacked" → select the `extension/` folder from this repo
-
-**B. Apple Events:** Chrome menu bar → View ▸ Developer ▸ Allow JavaScript
-from Apple Events. (`./quadbox pin` re-applies the pin to small windows.)
-
-**Hide the window title bars (optional):** System Settings ▸ Privacy &
-Security ▸ Accessibility → enable your terminal. quadbox then tucks each
-window's title bar under the menu bar / the row above — pure video, no
-traffic-light strip. Without the permission everything still tiles, bars
-visible (a hint is printed after launch).
-
-Both are no-ops during normal browsing: the pin only activates in windows
-narrower than 60% of your screen.
-
-## External display / TV
-
-Connect an external display and quadbox tiles onto it automatically — the
-laptop screen stays free for other use. Nothing to configure; it picks the
-first non-built-in screen (`QUAD_MAIN=1 ./quadbox ...` forces the laptop
-screen instead).
-
-To put the quad on a TV or projector, mirror the **external** display to it
-(System Settings ▸ Displays, or the TV's own input) — mirroring is macOS's
-job, quadbox just picks which screen the windows live on. Note the laptop
-itself must stay in extended mode: if you mirror the *laptop* display, both
-screens show the same thing by definition and there is no separate area to
-tile into.
-
-## How it works
-
-- **Tiling:** `NSScreen.visibleFrame` via JXA → exact work area of the target
-  display (the first external screen when one is connected, else the built-in
-  display); AppleScript sizes real Chrome `--app=` windows (no tab/URL bars)
-  into the grid — two videos stack top/bottom, three go two-up with one
-  full-width underneath, four tile 2×2 — moving windows across screens in
-  one straddle step when they open on the wrong display. Neighboring cells overlap 16 px so seams show a thin window shadow
-  over video instead of a black gap. Windows you already had open are never
-  touched.
-- **YouTube:** links are rewritten to `/embed/` players inside a local page
-  (`web/quad.html`, served by a localhost-only `python3 -m http.server` on
-  port 8787, auto-started; stop with `kill $(lsof -ti:8787)`). Direct embed
-  navigation is refused by YouTube (error 153); iframing from a real page
-  with a referer is not.
-- **Aggregators:** the watch page is fetched with curl, the player iframe URL
-  extracted (`embed|player|stream` heuristics, ad networks excluded), and
-  opened directly — those players self-fill. Placeholder embeds (stream not
-  live yet) fall back to the watch page. Pages with JS-injected players using
-  the `sd0embed` kit (cricwatch.io and similar) are resolved by rebuilding
-  the signed player URL from the page's embed config and opening it through a
-  localhost bounce (`web/go.html`) — the player 403s without a Referer, and
-  Chrome sends none for CLI-opened URLs. Signatures expire ~60 s after page
-  fetch, so resolution happens at launch time.
-- **Pin (`quadfill.js` / `extension/content.js`):** finds the largest
-  `<video>`, climbs to its player wrapper (site controls keep working), pins
-  it `position: fixed; 100vw×100vh`. Handles iframe-nested players too. Retries
-  every 2 s to survive slow loads and SPA rebuilds. `object-fit: contain` by
-  default — change to `cover` in either file to fill with slight side-crop.
-
-## Caveats
-
-- **Audio:** every video plays sound. Mute all but one.
-- **Concurrent-stream limits** of your subscriptions cap how many paid
-  streams actually run at once.
-- **Aggregator sites:** expect popup/redirect ads — never click "Allow
-  notifications"; close popups. Streams typically lag live TV by 30–60 s.
-- YouTube TV subscribers: built-in **multiview** is the zero-effort quad box
-  when your games are in a multiview group.
-
-## Disclaimer
-
-quadbox is a window-management tool for your personal viewing. Respect the
-terms of service of your streaming providers and the rights of content
-owners. No streams are hosted, proxied, or decrypted by this project.
-
-## Files
-
+```sh
+python3 --version
 ```
-quadbox               # the CLI (bash + AppleScript/JXA)
-web/quad.html         # YouTube 2x2 grid page (localhost)
-web/go.html           # referer bounce for signed player URLs (localhost)
-quadfill.js           # pin script injected via Apple Events
-extension/            # quadfill as a Chrome extension (site-agnostic)
+
+If you see `Python 3` followed by a version number, continue. Otherwise, download a Python 3 **macOS installer** from [Python's official download page](https://www.python.org/downloads/macos/), open it, and follow the installer. Close and reopen Terminal, then run `python3 --version` again.
+
+Mosaic does not require Homebrew, Node.js, or any extra Python packages.
+
+### 3. Download Mosaic and start it
+
+Copy and run this box **once**. It downloads Mosaic into a folder called `mosaic` inside your Mac's home folder, then opens the NHL game picker:
+
+```sh
+git clone https://github.com/rithvikm/mosaic.git "$HOME/mosaic"
+cd "$HOME/mosaic"
+export PATH="$PWD:$PATH"
+mosaic nhl
 ```
+
+If Terminal says the folder already exists because you downloaded Mosaic before, skip the `git clone` line and run the remaining three lines. If no NHL games are listed today, try:
+
+```sh
+mosaic all
+```
+
+The `export PATH` line tells this Terminal window where to find the `mosaic` command. It lasts until you close that window. You can also run `./mosaic nhl` from inside the Mosaic folder without that line.
+
+On the first launch, macOS may ask whether Terminal can control Google Chrome. Choose **Allow** so Mosaic can arrange the windows.
+
+### 4. Choose your games
+
+Here is an example of the picker. These scores are made up to illustrate the screen:
+
+```text
+Mosaic | 3 games | 2/4 selected
+Up/Down: move  Space: select  Enter: launch  q: quit
+a: select all (up to 4)  c: clear  PgUp/PgDn: scroll  Home/End: first/last
+[x]   1  Buffalo Sabres vs Chicago Blackhawks    3-2  8:42 - 3rd
+[x]   2  Edmonton Oilers vs Seattle Kraken       1-1  12:06 - 2nd
+[ ]   3  Toronto Maple Leafs vs Ottawa Senators  —    7:00 PM ET
+```
+
+- **Up / Down arrows:** move through the games. The list scrolls as you move.
+- **Space:** select the highlighted game. `[x]` means selected. Press Space again to deselect it.
+- **Return / Enter:** open exactly the games you selected. Choose at least one and at most four.
+- **a:** select every game when the list has four or fewer. If eight games are shown, use Space to choose any four of those eight.
+- **c:** clear your selections.
+- **q** or **Esc:** leave without opening games.
+- **Page Up / Page Down**, or **Home / End:** jump through a longer list. You can also move one row at a time with the arrow keys.
+
+Scores follow the order of the teams in each matchup. The text beside a score shows the game clock, scheduled start, or status. Scores are fetched when you run the command; they do not refresh continuously in the menu. Missing scores appear as `—`.
+
+Chrome opens and arranges the games you checked. You may need to sign in to a provider or press **Play** in each player. Mute the players you do not want to hear using their volume controls. If the webpage surrounds the video, follow [Make the video fill its window](#make-the-video-fill-its-window).
+
+### 5. Start Mosaic again later
+
+Whenever you open a new Terminal window, paste this box. **You do not need to download Mosaic again.**
+
+```sh
+cd "$HOME/mosaic"
+export PATH="$PWD:$PATH"
+mosaic all
+```
+
+Replace `all` with `nhl`, `nba`, `nfl`, or another sport to narrow the list. Close the game windows using their red close buttons when you finish watching. Closing Terminal alone does not close Chrome.
+
+## Examples to try
+
+The commands below assume you have completed step 3 or step 5 in the current Terminal window.
+
+### Pick games
+
+```sh
+mosaic all                # Browse all games in the listing
+mosaic nhl                # Browse one sport
+mosaic nfl nba            # Combine sports in one menu
+mosaic soccer             # Browse soccer leagues together
+mosaic cricket            # Browse cricket matches
+mosaic nhl sabres         # Search within a sport
+mosaic sabres             # Search across sports
+```
+
+Sport filters show the scrollable picker. Team keywords launch matching games directly when there are four or fewer matches; larger result sets show the picker. Multiple keywords narrow the results. Available sport keys depend on that day's listings; when nothing matches, the error lists available sports and aliases.
+
+The interactive picker uses Python's standard-library `curses` module and needs no additional packages. Piped input, terminals without interactive support, or `MOSAIC_PICKER=plain` use the numbered menu instead. In that mode, type up to four game numbers separated by spaces:
+
+```sh
+MOSAIC_PICKER=plain mosaic nhl
+```
+
+The picker fetches listings from the configured main source and cricket source. It also looks up scores and game status through ESPN scoreboard data and ESPNcricinfo. These are a snapshot taken when the command runs, not a continuously updating scoreboard. Matching is based on team names, so coverage and accuracy vary; unavailable scores or status may be blank.
+
+### Open your own links
+
+Pass one to four URLs, quoting each URL to protect query parameters from the shell:
+
+```sh
+mosaic 'https://www.youtube.com/watch?v=VIDEO_ID_1' \
+          'https://www.youtube.com/watch?v=VIDEO_ID_2'
+```
+
+Replace the example video IDs with real ones. You can also run `mosaic` without arguments and paste one URL per line. Submit an empty line to finish, or enter four links.
+
+| Links | Viewing mode |
+| --- | --- |
+| All YouTube | One Chrome window containing a local embed grid; videos request muted autoplay |
+| Other sources, including mixed YouTube and other links | Separate Chrome app windows arranged on the target display |
+| Recognized watch pages | Attempts to open the embedded player directly; otherwise opens the original page |
+
+Provider login, playback restrictions, and subscription stream limits still apply. Some videos cannot be embedded or expanded successfully.
+
+## Make the video fill its window
+
+If a video opens with menus, ads, or other page content around it, use one of the two options below. You only need to set this up once. The YouTube grid and pages containing only a player may already fill the window.
+
+### Chrome extension
+
+1. Open `chrome://extensions` in Chrome.
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. In the folder chooser, press **Command + Shift + G**, paste `~/mosaic/extension`, and press **Return**. Click **Select** or **Open** to load that folder.
+5. The extension should appear as **Mosaic Fill**. Close and reopen your game windows if necessary.
+
+The extension appears as **Mosaic Fill**. It runs on HTTP and HTTPS pages, including their frames, and attempts to expand the largest video or player iframe in windows no wider than roughly 60% of the screen. This size check also applies to ordinary narrow Chrome windows; it does not identify Mosaic windows specifically.
+
+### Apple Events
+
+In Chrome's menu bar, enable **View → Developer → Allow JavaScript from Apple Events**. Mosaic can then inject `mosaic-fill.js` into the active tab when placing a window. To retry later:
+
+```sh
+mosaic pin
+```
+
+The injected script looks for a video in the active page; the extension additionally supports player iframes. Both retry periodically while the page is open. Videos keep their aspect ratio, so letterboxing can remain.
+
+### Optional: hide window title bars
+
+In **System Settings → Privacy & Security → Accessibility**, enable the terminal application you use to run Mosaic. This allows Mosaic to tuck title bars behind neighboring windows or the menu bar. Without it, window tiling still works with visible title bars.
+
+## Displays and layouts
+
+Mosaic uses the first external display it finds, falling back to the primary display. To force the primary display:
+
+```sh
+MOSAIC_MAIN=1 mosaic nhl
+```
+
+| Videos | Separate windows | YouTube grid |
+| --- | --- | --- |
+| 1 | Fills the display's work area | One video |
+| 2 | Top and bottom | Side by side |
+| 3 | Two above, one wide below | Two above, one wide below |
+| 4 | 2 × 2 | 2 × 2 |
+
+The launcher positions newly opened windows and leaves existing windows in place. The separate `pin` command can act on existing small Chrome windows.
+
+For a TV or projector, connect it as an extended display or configure mirroring in macOS. Mosaic handles window placement; display mirroring is managed by the operating system.
+
+## Advanced settings (optional)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BUFF_DOMAIN` | `https://mybuffstreams.plus` | Base URL for the main game-listing source |
+| `CRIC_DOMAIN` | `https://cricwatch.io` | Base URL for cricket listings |
+| `MOSAIC_MAIN` | Unset | Any nonempty value forces the primary display |
+| `MOSAIC_PICKER` | Unset | Set to `plain` to use numbered input instead of the scrollable picker |
+
+If a listing source changes domains, set its base URL without a trailing slash:
+
+```sh
+BUFF_DOMAIN='https://replacement.example' mosaic nhl
+```
+
+The YouTube grid and certain player redirects use a local Python HTTP server bound to `127.0.0.1:8787`. The launcher starts it when needed, and it can remain running after the video windows close. To find it:
+
+```sh
+lsof -nP -iTCP:8787 -sTCP:LISTEN
+```
+
+To stop it, run `kill PID` using the process ID after confirming it is Mosaic's Python server.
+
+## Get updates
+
+To download newer versions after installing Mosaic, run:
+
+```sh
+cd "$HOME/mosaic"
+git pull --ff-only
+```
+
+If Git says you have local changes, it is protecting files you edited. Keep those files and ask for help before retrying. If you use the Chrome extension, open `chrome://extensions` and click its reload button after an update.
+
+## Troubleshooting
+
+| Problem | What to check |
+| --- | --- |
+| `mosaic: command not found` | Run all three lines in step 5, or use `./mosaic` from inside the Mosaic folder. |
+| `cd: no such file or directory` | Complete the download in step 3 first. If you downloaded to another folder, open that folder in Terminal instead. |
+| `python3: command not found` | Install Python 3 and confirm `python3 --version` works in your terminal. |
+| Chrome windows do not move | Check your terminal's Chrome permission under **Privacy & Security → Automation**. |
+| The webpage surrounds the video | Configure Mosaic Fill or Apple Events, wait for the player to load, and check the window-size limitation above. |
+| Title bars remain visible | Enable Accessibility for your terminal application. |
+| No games found or listing fetch fails | Check available sport names, your connection, and the configured source domains. Direct URLs can be used independently of the picker. |
+| Scores or clocks are missing | Score data or team-name matching may be unavailable. Run the command again to request a new snapshot. |
+| A YouTube embed will not play | The video may disallow embedding or require playback on YouTube. |
+| The local grid does not load | Check whether another application is using port 8787. |
+| A paid stream stops or asks for sign-in | Check the provider's account, playback, and concurrent-stream requirements. |
+
+## For contributors
+
+```text
+mosaic                  Bash launcher, game picker, score lookup, and window placement
+picker.py               Scrollable terminal selection interface
+mosaic-fill.js          Video expansion script for Apple Events
+extension/
+  manifest.json         Chrome extension configuration
+  content.js            Video and iframe expansion script
+web/
+  mosaic.html           Local YouTube grid
+  go.html               Local redirect page for certain player URLs
+```
+
+There is no build step or package installation. A basic launcher syntax check is:
+
+```sh
+bash -n mosaic
+python3 -m unittest discover -s tests -v
+```
+
+Playback and window placement need manual verification on macOS with Chrome. Listing parsers and score lookups depend on external page formats and APIs and may need updates when those sources change.
+
+## Credits
+
+Mosaic was copied from **Hardhi’s [quadbox](https://github.com/hshringeri/quadbox)** and builds on his original work. This version adds score and game-status lookup to the game picker.
+
+Mosaic opens video sources in your browser; it does not host, proxy, or decrypt video streams. Use sources you are authorized to access and follow the applicable providers' terms.

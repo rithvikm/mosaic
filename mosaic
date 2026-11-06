@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# quadbox — 1-4 live videos on one screen, each full-bleed in its own tile.
+# mosaic — 1-4 live videos on one screen, each full-bleed in its own tile.
 #
-#  All-YouTube links -> local quad page (2x2 iframe embeds). No setup at all.
-#  Any other site    -> tiled app-mode windows + quadfill pin, via either:
+#  All-YouTube links -> local Mosaic page (2x2 iframe embeds). No setup at all.
+#  Any other site    -> tiled app-mode windows + Mosaic Fill pin, via either:
 #                       a) the bundled Chrome extension (extension/), or
 #                       b) Chrome's "Allow JavaScript from Apple Events".
 set -euo pipefail
@@ -12,14 +12,14 @@ PORT=8787
 if [ "${1:-}" = "pin" ]; then
   MODE="pin"
 else
-  # buffstreams picker: quadbox <sport> [more sports / team keywords...]
-  #   quadbox nhl            -> numbered menu of today's NHL games, pick up to 4
-  #   quadbox all            -> every game listed today, all sports
-  #   quadbox nfl nba        -> combined cross-sport menu
-  #   quadbox soccer         -> sport groups work too (laliga + mls + ...)
-  #   quadbox cricket        -> today's cricket matches (merged from cricwatch)
-  #   quadbox nhl sabres     -> auto-launch every game matching keywords
-  #   quadbox sabres         -> keywords alone search every sport listed today
+  # buffstreams picker: mosaic <sport> [more sports / team keywords...]
+  #   mosaic nhl            -> numbered menu of today's NHL games, pick up to 4
+  #   mosaic all            -> every game listed today, all sports
+  #   mosaic nfl nba        -> combined cross-sport menu
+  #   mosaic soccer         -> sport groups work too (laliga + mls + ...)
+  #   mosaic cricket        -> today's cricket matches (merged from cricwatch)
+  #   mosaic nhl sabres     -> auto-launch every game matching keywords
+  #   mosaic sabres         -> keywords alone search every sport listed today
   # Args matching a sport on today's page act as sport filters; the rest are
   # keywords matched against game labels. Only keyword args auto-launch their
   # matches (when <=4); pure sport filters always show the numbered menu.
@@ -389,47 +389,59 @@ for i, ((s, label, url, al), rp) in enumerate(zip(rows, row_paths), 1):
 # keyword searches auto-launch their matches; sport filters always menu
 print("MODE\t%s" % ("auto" if kw else "menu"))
 PY
-) || { [ -z "$LISTING" ] || echo "quadbox: $LISTING" >&2; exit 1; }
+) || { [ -z "$LISTING" ] || echo "mosaic: $LISTING" >&2; exit 1; }
 
     LABELS=(); SCORES=(); STATUSES=(); PICK_URLS=(); MODE=menu
-    while IFS=$'\t' read -r _idx matchup score status url; do
+    # A non-whitespace delimiter preserves empty score/status fields in Bash.
+    while IFS=$'\x1f' read -r _idx matchup score status url; do
       case "$_idx" in MODE) MODE="$matchup"; continue;; esac
       LABELS+=("$matchup"); SCORES+=("$score"); STATUSES+=("$status"); PICK_URLS+=("$url")
-    done <<< "$LISTING"
+    done <<< "${LISTING//$'\t'/$'\x1f'}"
 
     # team keywords auto-launch their matches; sport filters always show the
-    # menu, so `quadbox nfl nba` lists the combined slate instead of just
-    # filling the quad with whatever fit
+    # menu, so `mosaic nfl nba` lists the combined slate instead of just
+    # filling the grid with whatever fit
     if [ "$MODE" = "auto" ] && [ "${#PICK_URLS[@]}" -le 4 ]; then
       PICKED=("${PICK_URLS[@]}")            # keyword mode: auto-pick matches
       PICKED_LABELS=("${LABELS[@]}")
     else
-      # aligned table: # | MATCHUP | SCORE | TIME
-      _mw=7
-      for _l in "${LABELS[@]}"; do
-        [ "${#_l}" -gt "$_mw" ] && _mw=${#_l}
-      done
-      [ "$_mw" -gt 56 ] && _mw=56
-      _sw=5
-      for _s in "${SCORES[@]}"; do
-        [ "${#_s}" -gt "$_sw" ] && _sw=${#_s}
-      done
-      [ "$_sw" -lt 5 ] && _sw=5
-      _rule_m=$(printf '%*s' "$_mw" '' | tr ' ' '-')
-      _rule_s=$(printf '%*s' "$_sw" '' | tr ' ' '-')
-      printf '%-3s  %-*s  %-*s  %s\n' '#' "$_mw" 'MATCHUP' "$_sw" 'SCORE' 'TIME' >&2
-      printf '%-3s  %-*s  %-*s  %s\n' '---' "$_mw" "$_rule_m" "$_sw" "$_rule_s" '----------------' >&2
-      for _i in "${!LABELS[@]}"; do
-        _m="${LABELS[$_i]}"
-        [ "${#_m}" -gt "$_mw" ] && _m="${_m:0:$((_mw - 3))}..."
-        printf '%-3s  %-*s  %-*s  %s\n' "$((_i + 1))" "$_mw" "$_m" "$_sw" "${SCORES[$_i]}" "${STATUSES[$_i]}" >&2
-      done
-      printf 'pick up to 4 numbers (space separated): ' >&2
-      IFS=' ' read -r picks
+      _picker_status=3
+      if [ -t 0 ] && [ -t 2 ] && [ "${TERM:-dumb}" != dumb ] && [ "${MOSAIC_PICKER:-}" != plain ]; then
+        if picks=$(printf '%s\n' "$LISTING" | python3 "$DIR/picker.py"); then
+          _picker_status=0
+        else
+          _picker_status=$?
+          [ "$_picker_status" -eq 3 ] || exit "$_picker_status"
+        fi
+      fi
+      if [ "$_picker_status" -ne 0 ]; then
+        # aligned table: # | MATCHUP | SCORE | TIME
+        _mw=7
+        for _l in "${LABELS[@]}"; do
+          [ "${#_l}" -gt "$_mw" ] && _mw=${#_l}
+        done
+        [ "$_mw" -gt 56 ] && _mw=56
+        _sw=5
+        for _s in "${SCORES[@]}"; do
+          [ "${#_s}" -gt "$_sw" ] && _sw=${#_s}
+        done
+        [ "$_sw" -lt 5 ] && _sw=5
+        _rule_m=$(printf '%*s' "$_mw" '' | tr ' ' '-')
+        _rule_s=$(printf '%*s' "$_sw" '' | tr ' ' '-')
+        printf '%-3s  %-*s  %-*s  %s\n' '#' "$_mw" 'MATCHUP' "$_sw" 'SCORE' 'TIME' >&2
+        printf '%-3s  %-*s  %-*s  %s\n' '---' "$_mw" "$_rule_m" "$_sw" "$_rule_s" '----------------' >&2
+        for _i in "${!LABELS[@]}"; do
+          _m="${LABELS[$_i]}"
+          [ "${#_m}" -gt "$_mw" ] && _m="${_m:0:$((_mw - 3))}..."
+          printf '%-3s  %-*s  %-*s  %s\n' "$((_i + 1))" "$_mw" "$_m" "$_sw" "${SCORES[$_i]}" "${STATUSES[$_i]}" >&2
+        done
+        printf 'pick up to 4 numbers (space separated): ' >&2
+        IFS=' ' read -r picks
+      fi
       PICKED=(); PICKED_LABELS=()
       for p in $picks; do
-        case "$p" in ''|*[!0-9]*) echo "quadbox: '$p' is not a number" >&2; exit 2;; esac
-        [ "$p" -ge 1 ] && [ "$p" -le "${#PICK_URLS[@]}" ] || { echo "quadbox: no game #$p" >&2; exit 2; }
+        case "$p" in ''|*[!0-9]*) echo "mosaic: '$p' is not a number" >&2; exit 2;; esac
+        [ "$p" -ge 1 ] && [ "$p" -le "${#PICK_URLS[@]}" ] || { echo "mosaic: no game #$p" >&2; exit 2; }
         PICKED+=("${PICK_URLS[$((p-1))]}")
         PICKED_LABELS+=("${LABELS[$((p-1))]}")
         [ "${#PICKED[@]}" -ge 4 ] && break
@@ -454,21 +466,21 @@ PY
     set -- "${URLS[@]}"
   fi
   if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
-    echo "usage: quadbox [URL] [URL2] [URL3] [URL4]   open videos in a quad layout" >&2
-    echo "       quadbox pin                            re-pin video in small windows (Apple-Events mode)" >&2
+    echo "usage: mosaic [URL] [URL2] [URL3] [URL4]   open videos in a tiled layout" >&2
+    echo "       mosaic pin                            re-pin video in small windows (Apple-Events mode)" >&2
     exit 2
   fi
   MODE="tile"
 fi
 
 # Visible work area (excludes menu bar + Dock), converted to top-left coords.
-# Target screen: the first external display when one is connected — the quad
+# Target screen: the first external display when one is connected — the grid
 # lands there (ready to mirror to a TV/projector) and the laptop stays free.
-# QUAD_MAIN=1 forces the built-in screen. Screen frames live in one global
+# MOSAIC_MAIN=1 forces the built-in screen. Screen frames live in one global
 # bottom-left-origin space; screens[0] is the primary display (origin 0,0 by
 # definition), so its height is the y-flip reference into AppleScript's
 # top-left bounds coordinates — required once the target isn't the primary.
-SCRARG="auto"; [ -n "${QUAD_MAIN:-}" ] && SCRARG="main"
+SCRARG="auto"; [ -n "${MOSAIC_MAIN:-}" ] && SCRARG="main"
 read -r L T R B SCREEN SCR_DIM < <(osascript -l JavaScript -e '
 function run(argv) {
   ObjC.import("AppKit");
@@ -495,13 +507,13 @@ function run(argv) {
     + " " + label + " " + Math.round(s.frame.size.width) + "x" + Math.round(s.frame.size.height);
 }' "$SCRARG")
 if [ "$SCREEN" = external ]; then
-  echo "quadbox: tiling on external display $SCR_DIM — laptop stays free (QUAD_MAIN=1 forces the laptop screen)" >&2
+  echo "mosaic: tiling on external display $SCR_DIM — laptop stays free (MOSAIC_MAIN=1 forces the laptop screen)" >&2
 elif [ "$SCRARG" = main ]; then
-  echo "quadbox: QUAD_MAIN set — tiling on the built-in screen $SCR_DIM" >&2
+  echo "mosaic: MOSAIC_MAIN set — tiling on the built-in screen $SCR_DIM" >&2
 fi
 
 if [ "$MODE" = "pin" ]; then
-  osascript - "$L" "$T" "$R" "$B" "$DIR/quadfill.js" <<'AS'
+  osascript - "$L" "$T" "$R" "$B" "$DIR/mosaic-fill.js" <<'AS'
 on run argv
   set L to (item 1 of argv) as integer
   set R to (item 3 of argv) as integer
@@ -557,20 +569,20 @@ for u in "${ARGS[@]}"; do
 done
 
 ensure_server() {
-  if ! curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/quad.html"; then
+  if ! curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/mosaic.html"; then
     (nohup python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$DIR/web" >/dev/null 2>&1 &)
     for _ in 1 2 3 4 5 6; do
-      curl -sf -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/quad.html" && break
+      curl -sf -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/mosaic.html" && break
       sleep 0.5
     done
   fi
 }
 
 if [ "$ALLYT" = 1 ]; then
-  # ---- quad page mode: one window, N iframe embeds, full-bleed, zero setup
+  # ---- Mosaic page mode: one window, N iframe embeds, full-bleed, zero setup
   ensure_server
   IDS_CSV=$(IFS=,; printf '%s' "${IDS[*]}")
-  PAGE="http://localhost:$PORT/quad.html?v=$IDS_CSV"
+  PAGE="http://localhost:$PORT/mosaic.html?v=$IDS_CSV"
   OLDIDS=$(osascript -e 'tell application "Google Chrome" to get id of windows' 2>/dev/null | tr -d ' ' || true)
   open -na "Google Chrome" --args "--app=$PAGE"
   osascript - "$L" "$T" "$R" "$B" "$OLDIDS" <<'AS'
@@ -589,7 +601,7 @@ on run argv
     set win to missing value
     repeat 40 times
       repeat with w in (get windows)
-        if (id of w) is not in oldIds and (URL of active tab of w) contains "localhost:8787/quad.html" then
+        if (id of w) is not in oldIds and (URL of active tab of w) contains "localhost:8787/mosaic.html" then
           set win to w
           exit repeat
         end if
@@ -597,7 +609,7 @@ on run argv
       if win is not missing value then exit repeat
       delay 0.5
     end repeat
-    if win is missing value then return "quad window NOT FOUND"
+    if win is missing value then return "Mosaic window NOT FOUND"
     set winId to id of win
     my moveToCell(winId, {L, T, R, B}, {L, T, R, B})
     -- hide the title bar via AX (Chrome clamps its own "set bounds"); needs
@@ -619,7 +631,7 @@ on run argv
     set rdb to bounds of (window id winId)
     set hint to ""
     if (item 2 of rdb) > (T - 27) then set hint to "  (title bar visible — grant Accessibility to your terminal to hide it)"
-    return "quad page -> x=" & (item 1 of rdb) & " y=" & (item 2 of rdb) & " " & ((item 3 of rdb) - (item 1 of rdb)) & "x" & ((item 4 of rdb) - (item 2 of rdb)) & hint
+    return "Mosaic page -> x=" & (item 1 of rdb) & " y=" & (item 2 of rdb) & " " & ((item 3 of rdb) - (item 1 of rdb)) & "x" & ((item 4 of rdb) - (item 2 of rdb)) & hint
   end tell
 end run
 
@@ -670,7 +682,7 @@ fi
 
 # ---- per-window mode (any site): tiled app windows. Aggregator watch pages
 # are resolved to their direct player iframe URL, which self-fills the window
-# (no pin needed); anything else gets the quadfill pin.
+# (no pin needed); anything else gets the Mosaic Fill pin.
 player_iframe_src() {
   local html src UA
   UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
@@ -745,7 +757,7 @@ for u in "${OPENURLS[@]}"; do
   sleep 0.6
 done
 
-osascript - "$L" "$T" "$R" "$B" "$DIR/quadfill.js" "$OLDIDS" "$FLAGS_CSV" "${FINAL[@]}" <<'AS'
+osascript - "$L" "$T" "$R" "$B" "$DIR/mosaic-fill.js" "$OLDIDS" "$FLAGS_CSV" "${FINAL[@]}" <<'AS'
 on run argv
   set L to (item 1 of argv) as integer
   set T to (item 2 of argv) as integer
